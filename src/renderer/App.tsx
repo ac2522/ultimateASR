@@ -1,5 +1,6 @@
 import { Route, Routes } from "react-router-dom";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FirstRunWizard } from "@/components/first-run-wizard";
 import { HomePage } from "@/pages/home";
 import { SettingsPage } from "@/pages/settings";
 import { ModelsPage } from "@/pages/models";
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/llm" element={<LlmPage />} />
         </Routes>
       </main>
+      <FirstRunWizard />
     </div>
   );
 }
