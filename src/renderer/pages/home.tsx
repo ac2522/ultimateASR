@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { StatusPill } from "@/components/status-pill";
+import { TranscriptList } from "@/components/transcript-list";
 import { useRecordingStore } from "@/store/recording-store";
 import { Card } from "@/components/ui/card";
 
@@ -19,6 +20,7 @@ export function HomePage() {
         </p>
         {pong && <p className="text-xs mt-2 text-muted-foreground">Sidecar: {pong}</p>}
       </Card>
+      <TranscriptList />
     </div>
   );
 }
