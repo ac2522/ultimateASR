@@ -51,13 +51,15 @@ class ParakeetEngine:
         (encoder, decoder/joint, preprocessor_config, vocab).
     """
 
+    kind = "parakeet-local"
     SAMPLE_RATE = 16000
 
-    def __init__(self, model_path: str, **_ignored):
+    def __init__(self, model_path: str, _stub_for_test: bool = False, **_ignored):
         self._model_path = model_path
         self._model = None
-        self._load(model_path)
-        atexit.register(self.unload)
+        if not _stub_for_test:
+            self._load(model_path)
+            atexit.register(self.unload)
 
     def _load(self, model_path: str) -> None:
         # Lazy import — see module docstring for why this must not happen

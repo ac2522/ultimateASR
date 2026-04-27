@@ -26,15 +26,17 @@ class WhisperEngine:
         Number of CPU threads used for inference (default ``4``).
     """
 
-    def __init__(self, model_path: str, language: str = "en", n_threads: int = 4):
+    kind = "whisper-local"
+
+    def __init__(self, model_path: str, language: str = "en", n_threads: int = 4, _stub_for_test: bool = False):
         self._language = language
         self._n_threads = n_threads
         self._model = None
 
-        self._load_model(model_path)
-
-        # Ensure the model is freed when the process exits.
-        atexit.register(self.unload)
+        if not _stub_for_test:
+            self._load_model(model_path)
+            # Ensure the model is freed when the process exits.
+            atexit.register(self.unload)
 
     # ------------------------------------------------------------------
     # Internal helpers
