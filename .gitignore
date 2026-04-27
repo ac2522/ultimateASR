@@ -1,0 +1,38 @@
+# Node
+node_modules/
+dist/
+dist-electron/
+out/
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Editors
+.idea/
+.vscode/
+.DS_Store
+
+# Build artifacts
+release/
+sidecar/build/
+sidecar/dist/
+*.spec
+
+# Models / runtime
+~/.ultimateasr/
+sidecar/models/
+sidecar/vad/
+
+# Secrets
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets.json
