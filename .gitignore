@@ -24,8 +24,8 @@ sidecar/build/
 sidecar/dist/
 *.spec
 
-# Models / runtime
-~/.ultimateasr/
+# Models / runtime (user data lives in ~/.ultimateasr/, outside the repo;
+# the patterns below cover in-repo scratch dirs only)
 sidecar/models/
 sidecar/vad/
 
