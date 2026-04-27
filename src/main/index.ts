@@ -7,6 +7,7 @@ import { TrayController, type TrayCallbacks } from "./tray";
 import { trayIdleIcon, trayRecordingIcon } from "./icons";
 import { createHotkeyController, type HotkeyController } from "./hotkey";
 import { RecordingController, type ControllerState } from "./recording-controller";
+import { TranscriptsStore } from "./transcripts-store";
 import { SettingsSchema, type Settings } from "@shared/settings-shape";
 import type { Transcript } from "@shared/transcript";
 
@@ -15,10 +16,8 @@ let sidecar: Sidecar | null = null;
 let tray: TrayController | null = null;
 let hotkey: HotkeyController | null = null;
 let recordingController: RecordingController | null = null;
+let transcriptsStore: TranscriptsStore | null = null;
 
-// Phase 7 keeps the recent-transcripts buffer in memory only; Phase 8 will
-// swap this for a persistent store backed by the sidecar.
-const recentTranscripts: Transcript[] = [];
 let currentState: ControllerState = "idle";
 let currentHotkey: string | null = null;
 
@@ -75,9 +74,15 @@ function trayCallbacks(): TrayCallbacks {
 function refreshTray(state: ControllerState = currentState): void {
   if (!tray) return;
   try {
-    tray.update(state, recentTranscripts, trayCallbacks());
+    tray.update(state, transcriptsStore?.list() ?? [], trayCallbacks());
   } catch {
     /* tray may be unavailable in some environments */
+  }
+}
+
+function broadcast(channel: string, payload: unknown): void {
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send(channel, payload);
   }
 }
 
@@ -88,11 +93,9 @@ async function getSettings(): Promise<Settings> {
 }
 
 async function appendTranscript(t: Transcript): Promise<void> {
-  recentTranscripts.unshift(t);
-  if (recentTranscripts.length > 10) {
-    recentTranscripts.length = 10;
-  }
+  transcriptsStore?.add(t);
   refreshTray();
+  broadcast("event:transcript-added", t);
 }
 
 async function applyHotkey(): Promise<void> {
@@ -131,7 +134,11 @@ async function main() {
   sidecar = new Sidecar({ command: cfg.command, args: cfg.args });
   await sidecar.start();
 
-  setupIPC(sidecar);
+  transcriptsStore = new TranscriptsStore({
+    filePath: path.join(app.getPath("userData"), "transcripts.json"),
+  });
+
+  setupIPC(sidecar, { transcriptsStore });
 
   // Lazy-import auto-paste so the electron module reference is only resolved
   // inside an Electron runtime; tests for the controller never touch this path.

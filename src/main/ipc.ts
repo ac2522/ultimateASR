@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from "electron";
 import { ipcContract } from "@shared/ipc-contract";
 import type { Sidecar } from "./sidecar";
+import type { Transcript } from "@shared/transcript";
 
 // Maps renderer-facing IPC channel names to the sidecar's JSON-RPC method names.
 const RPC_METHOD: Record<string, string> = {
@@ -22,7 +23,16 @@ const RPC_METHOD: Record<string, string> = {
   // transcripts.* live in main-process state; handled below.
 };
 
-export function setupIPC(sidecar: Sidecar) {
+export interface TranscriptsStoreLike {
+  list(): Transcript[];
+  clear(): void;
+}
+
+export interface IpcDeps {
+  transcriptsStore?: TranscriptsStoreLike;
+}
+
+export function setupIPC(sidecar: Sidecar, deps: IpcDeps = {}) {
   // Forward sidecar notifications (e.g. download progress) to all renderer windows.
   sidecar.on("notify", (method, params) => {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -38,6 +48,13 @@ export function setupIPC(sidecar: Sidecar) {
       const out = await sidecar.call(method, parsed);
       return entry.output.parse(out);
     });
+  }
+
+  // Main-process-backed channels for the persistent transcripts store.
+  const store = deps.transcriptsStore;
+  if (store) {
+    ipcMain.handle("transcripts.list", async () => store.list());
+    ipcMain.handle("transcripts.clear", async () => { store.clear(); return null; });
   }
 }
 
