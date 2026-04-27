@@ -1,11 +1,26 @@
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, clipboard } from "electron";
 import path from "node:path";
 import { Sidecar } from "./sidecar";
 import { acquireOrFocus } from "./single-instance";
 import { setupIPC } from "./ipc";
+import { TrayController, type TrayCallbacks } from "./tray";
+import { trayIdleIcon, trayRecordingIcon } from "./icons";
+import { createHotkeyController, type HotkeyController } from "./hotkey";
+import { RecordingController, type ControllerState } from "./recording-controller";
+import { SettingsSchema, type Settings } from "@shared/settings-shape";
+import type { Transcript } from "@shared/transcript";
 
 let mainWindow: BrowserWindow | null = null;
 let sidecar: Sidecar | null = null;
+let tray: TrayController | null = null;
+let hotkey: HotkeyController | null = null;
+let recordingController: RecordingController | null = null;
+
+// Phase 7 keeps the recent-transcripts buffer in memory only; Phase 8 will
+// swap this for a persistent store backed by the sidecar.
+const recentTranscripts: Transcript[] = [];
+let currentState: ControllerState = "idle";
+let currentHotkey: string | null = null;
 
 function createWindow(): BrowserWindow {
   const win = new BrowserWindow({
@@ -35,6 +50,69 @@ function resolveSidecarCommand(): { command: string; args: string[] } {
   return { command, args: ["-m", "ultimate_asr"] };
 }
 
+function trayCallbacks(): TrayCallbacks {
+  return {
+    onOpenSettings: () => {
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        mainWindow = createWindow();
+      } else {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    },
+    onToggleRecording: () => {
+      void recordingController?.toggle();
+    },
+    onQuit: () => {
+      app.quit();
+    },
+    onSelectTranscript: (t) => {
+      try { clipboard.writeText(t.text); } catch { /* noop */ }
+    },
+  };
+}
+
+function refreshTray(state: ControllerState = currentState): void {
+  if (!tray) return;
+  try {
+    tray.update(state, recentTranscripts, trayCallbacks());
+  } catch {
+    /* tray may be unavailable in some environments */
+  }
+}
+
+async function getSettings(): Promise<Settings> {
+  if (!sidecar) throw new Error("sidecar not initialized");
+  const raw = await sidecar.call("get_settings");
+  return SettingsSchema.parse(raw);
+}
+
+async function appendTranscript(t: Transcript): Promise<void> {
+  recentTranscripts.unshift(t);
+  if (recentTranscripts.length > 10) {
+    recentTranscripts.length = 10;
+  }
+  refreshTray();
+}
+
+async function applyHotkey(): Promise<void> {
+  if (!hotkey || !recordingController) return;
+  let accelerator = "Ctrl+Alt+Shift+L";
+  try {
+    const settings = await getSettings();
+    accelerator = settings.hotkey || accelerator;
+  } catch {
+    /* fall back to default if settings can't be read yet */
+  }
+  if (currentHotkey && currentHotkey !== accelerator) {
+    hotkey.unregister(currentHotkey);
+  }
+  const ok = hotkey.register(accelerator, () => {
+    void recordingController?.toggle();
+  });
+  if (ok) currentHotkey = accelerator;
+}
+
 async function main() {
   const { isPrimary } = acquireOrFocus(app, () => {
     if (mainWindow) {
@@ -55,14 +133,49 @@ async function main() {
 
   setupIPC(sidecar);
 
+  // Lazy-import auto-paste so the electron module reference is only resolved
+  // inside an Electron runtime; tests for the controller never touch this path.
+  const pasteText = async (text: string): Promise<void> => {
+    const mod = await import("./auto-paste");
+    await mod.pasteText(text);
+  };
+
+  recordingController = new RecordingController({
+    sidecar,
+    getSettings,
+    appendTranscript,
+    pasteText,
+  });
+
+  tray = new TrayController(trayIdleIcon, trayRecordingIcon);
+  refreshTray("idle");
+
+  hotkey = createHotkeyController();
+  await applyHotkey();
+
+  recordingController.on("state", (state: ControllerState) => {
+    currentState = state;
+    refreshTray(state);
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send("event:recording-state", { state });
+    }
+  });
+
   mainWindow = createWindow();
   app.on("activate", () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
   });
 
+  app.on("before-quit", async () => {
+    try { hotkey?.unregisterAll(); } catch { /* noop */ }
+    try { tray?.destroy(); } catch { /* noop */ }
+    try { await sidecar?.stop(); } catch { /* noop */ }
+  });
+
   app.on("window-all-closed", async () => {
+    // On macOS, app stays alive in the tray. Other platforms quit when the
+    // window closes — the before-quit handler stops the sidecar.
     if (process.platform !== "darwin") {
-      try { await sidecar?.stop(); } catch {}
       app.quit();
     }
   });
