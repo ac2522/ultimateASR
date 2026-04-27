@@ -46,6 +46,13 @@ function resolveSidecarCommand(): { command: string; args: string[] } {
   // In dev, use the system Python to run the package directly.
   // In production (after Phase 10 packaging), we'll use the bundled binary.
   const command = process.env.ULTIMATEASR_PYTHON || "python3";
+  // Test-only escape hatch: when ULTIMATEASR_E2E_SIDECAR points at a Node script,
+  // run it with the current node executable instead of the Python sidecar. This is
+  // a no-op unless the env var is set, so production builds are unaffected.
+  const e2e = process.env.ULTIMATEASR_E2E_SIDECAR;
+  if (e2e) {
+    return { command: process.execPath, args: [e2e] };
+  }
   return { command, args: ["-m", "ultimate_asr"] };
 }
 
