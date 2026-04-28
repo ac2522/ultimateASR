@@ -10,6 +10,7 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
+.venv-build/
 venv/
 .pytest_cache/
 
@@ -20,9 +21,11 @@ venv/
 
 # Build artifacts
 release/
+dist-sidecar/
 sidecar/build/
 sidecar/dist/
 *.spec
+!sidecar/ultimate_asr.spec
 
 # Models / runtime (user data lives in ~/.ultimateasr/, outside the repo;
 # the patterns below cover in-repo scratch dirs only)
