@@ -32,32 +32,67 @@ These have to happen before anyone can dictate. None has been driven yet.
 
 ## 3. Gaps vs. whisperLocal
 
-Items the older PyQt app did that the new app does not (yet). Each is labeled with effort (S/M/L) and priority (P0/P1/P2).
+Items the older PyQt app did that the new app does not (yet). Each is labeled with effort (S/M/L) and priority (P0/P1/P2). **All items below should be implemented in a way that works on Linux + macOS + Windows wherever the underlying OS supports it; legacy Linux-only paths are not acceptable.**
 
-### Must-port (parity blockers)
+### Guiding principles
 
-- [ ] **In-app error / log panel** — `whisperLocal/ui/error_panel.py` (177 lines). A collapsible panel showing recent log lines, auto-expanding on ERROR, level-coloured. Without this, troubleshooting requires reading systemd / files.  **(M, P1)**
-- [ ] **Tray menu shows "Start Recording" ↔ "Stop Recording"** depending on state (currently a static "Toggle recording"). `whisperLocal/ui/main_window.py:672`.  **(S, P1)**
-- [ ] **Linux installer / setup helper** — verify the user is in the `input` group (otherwise the Wayland evdev hotkey fails silently), prompt for `usermod -aG input $USER`, suggest installing `xdotool`/`wtype`. The original `whisperLocal/install.sh` did this. electron-builder's Linux postinst hook is the right place.  **(M, P1)**
-- [ ] **Model migration** — if `~/.whisper2text/models/` exists from a prior whisperLocal install, offer to symlink or copy into ultimateASR's models dir on first run.  **(S, P2)**
-- [ ] **Wayland hotkey via evdev (sidecar)** — `src/main/hotkey.ts` has a `evdevFallback` injection point, but the actual evdev path isn't implemented. whisperLocal's `main_window.py:866-991` is the proven implementation; lift it into a sidecar RPC method (`register_hotkey`/`unregister_hotkey`) and have the main process route through it on Linux + Wayland.  **(M, P1)**
-- [ ] **Keyboard hotplug rescanning** — whisperLocal rescans `/dev/input/event*` every 2 seconds so new keyboards (USB plug-in, Bluetooth reconnect) get the hotkey too. ultimateASR registers once and never rescans.  **(S, P2)**
+- **Hotkey > button.** The global hotkey is the primary trigger for recording. The on-screen Record button is for first-time users testing their setup; a missing or unreliable button is acceptable, a missing or unreliable hotkey is not.
+- **Cross-platform first.** When porting a behaviour from whisperLocal that was Linux-specific (evdev, systemd, ydotool), the port has to abstract over the OS. Linux-only solutions are rejected.
 
-### Nice-to-have (parity polish)
+### Must-port (parity blockers — P1)
 
-- [ ] **Recording-mode toggle in tray menu** — switch between silence and button mode without opening Settings. `whisperLocal/ui/main_window.py` shows it; ours doesn't.  **(S, P2)**
-- [ ] **Systemd user service** — auto-start on login + `Restart=on-failure`. The original `whisperLocal/packaging/whisper2text.service` is the template. Ship it as part of the Linux deb postinst.  **(M, P2)**
-- [ ] **Startup diagnostics log** — `whisperLocal/config/startup_diagnostics.py` logs ONNX/CUDA capability + driver versions on every start. Useful for bug reports. Port into the sidecar.  **(S, P2)**
-- [ ] **Tests dropped during the port** — port these from `whisperLocal/tests/`:
-  - `test_hotkey.py` — Wayland evdev path. Important once we re-implement the fallback.
-  - `test_paste_realistic.py` and `test_autopaste_e2e.py` — paste behaviour edge cases.
-  - `test_process_lock.py` — only relevant if we ever move single-instance off Electron's `requestSingleInstanceLock`.  **(M, P2)**
+- [ ] **Wayland hotkey via evdev (sidecar)** — `src/main/hotkey.ts` already has the `evdevFallback` injection point; the actual evdev backend is unimplemented. Lift `whisperLocal/ui/main_window.py:866-991` into a new sidecar module (`sidecar/ultimate_asr/hotkey_evdev.py`) + RPC methods (`register_hotkey` / `unregister_hotkey` / a `hotkey-pressed` notification stream). Main process routes through it only when `XDG_SESSION_TYPE=wayland`. **Promoted from P2 because hotkey reliability is the primary trigger.**  **(M, P1)**
+- [ ] **Keyboard hotplug rescan** — re-detect input devices when keyboards are plugged in / Bluetooth reconnects. **Promoted from P2 to P1 per user direction.** Cross-platform shape:
+  - Linux (evdev path): port whisperLocal's 2-second `/dev/input/event*` rescanner verbatim.
+  - macOS / Windows (Electron `globalShortcut` path): the OS already re-routes shortcut events to the new active keyboard automatically — no app-level rescan needed. Confirm and document.
+  - Acceptance: unplug + replug a USB keyboard while recording; the next hotkey press still toggles.  **(S, P1)**
+- [ ] **Tray menu shows "Start Recording" ↔ "Stop Recording"** dynamically (currently a static "Toggle recording"). Add a menu separator + status label that pluralises with state. Cross-platform — Electron menu API.  **(S, P1)**
+- [ ] **Linux installer / setup helper** — verify the user is in the `input` group (Wayland evdev hotkey fails silently otherwise), prompt for `usermod -aG input $USER`, suggest installing `xdotool` / `wtype`. electron-builder's Linux postinst is the right place. macOS + Windows already cover their equivalents (System Events / SendKeys are built in).  **(M, P1)**
+
+### Should-port (parity polish — P2, do these next, not later)
+
+These were P2 in the original draft. User asked to promote them if they can be done well and cross-platform. All four can.
+
+- [ ] **Recording-mode toggle in tray menu** — submenu "Mode" with checkmarked "Silence detection" / "Button (push-to-talk)" entries that update `settings.recording_mode` on click. Cross-platform via Electron menu. (Source: `whisperLocal/ui/main_window.py`).  **(S, P2)**
+- [ ] **"Open at login" — cross-platform**, replacing the Linux-only systemd unit:
+  - Linux deb: ship a freedesktop autostart entry under `~/.config/autostart/` (postinst).
+  - macOS: `app.setLoginItemSettings({ openAtLogin: true })` (Electron API).
+  - Windows: same Electron API path; flips the registry `Run` key.
+  - Add a Settings → "Launch on startup" toggle that drives this.  **(M, P2)**
+- [ ] **Crash recovery — cross-platform**, replacing systemd's `Restart=on-failure`:
+  - In-process: wrap the sidecar spawn with restart-on-exit logic in `src/main/sidecar.ts` (already partially handled by re-spawn on `exit` event — make it deterministic with backoff).
+  - Linux as a backstop: still ship a `--user`-level systemd unit in the deb postinst for users who want process-level restart.
+  - macOS / Windows: Electron itself doesn't crash often; the sidecar restart loop is sufficient.  **(M, P2)**
+- [ ] **Startup diagnostics log** — port `whisperLocal/config/startup_diagnostics.py` into the sidecar. Logs OS / CPU / RAM / Python / each ASR engine import outcome / detected backend on every start. Already mostly covered by `hardware.detect()`; just emit it once at startup and feed it to the new Errors tab (§3a).  **(S, P2)**
+- [ ] **Dropped tests, ported with platform abstraction:**
+  - `test_hotkey.py` — re-port once the evdev path lands. Mock `/dev/input/event*` reads.
+  - `test_paste_realistic.py` + `test_autopaste_e2e.py` — re-frame as three platform-keyed tests. Linux uses xdotool (mocked); macOS uses osascript (mocked); Windows uses PowerShell (mocked). The whisperLocal version drove a real X11 window — we don't need that fidelity since `auto-paste.test.ts` already verifies the spawn args.  **(M, P2)**
+- [ ] **Model migration** — if `~/.whisper2text/models/` exists from a prior whisperLocal install, offer to symlink / copy into ultimateASR's models dir on first run. Linux-only by definition, since whisperLocal was Linux-only — no cross-platform burden.  **(S, P2)**
 
 ### Won't-port (intentional changes)
 
-- ~~PyQt5 main window~~ — replaced by Electron + React + shadcn/ui. The new UI exists; rich features like the error panel still need porting per above.
-- ~~Process lock in Python~~ — Electron's `app.requestSingleInstanceLock()` does the job.
-- ~~`whisper2text.spec` PyInstaller spec~~ — replaced by `sidecar/ultimate_asr.spec`, narrower in scope (just the sidecar, not the whole app).
+- ~~PyQt5 main window~~ — replaced by Electron + React + shadcn/ui.
+- ~~Process lock in Python~~ — Electron's `app.requestSingleInstanceLock()` does the job, cross-platform.
+- ~~Linux-only `whisper2text.service` systemd unit~~ — replaced by the cross-platform "Open at login" + "Crash recovery" pair above. Deb-only systemd unit is a backstop, not the primary mechanism.
+
+## 3a. Errors / log surface (decision needed → recommend in-app + file)
+
+User asked: in-app errors tab (pretty) **or** just file-based log? Recommendation: **both, with a single source of truth.**
+
+Plan:
+1. **Sidecar always writes a rotating JSON-line log** to `<userData>/logs/ultimateasr.log` (one record per line, ISO timestamp + level + module + message). Same on every OS — Python `logging.handlers.RotatingFileHandler`, 5 MB × 3 backups.
+2. **Electron main process tees its own log to the same file** so renderer↔main↔sidecar errors live in one place.
+3. **In-app "Diagnostics" tab** (a new sidebar entry alongside Settings / Models / Dictionary / Cloud & LLM) shows the tail of that log — a virtualised list of records, each row coloured by level (gray INFO, amber WARN, red ERROR), expandable for stack traces. Filter chips: All / Errors / Warnings. Top-right buttons: "Copy log path", "Copy last 100 lines", "Clear" (deletes the file with confirmation), "Open log folder" (uses Electron `shell.showItemInFolder`).
+4. **Auto-surface errors** by toasting from any new ERROR-level record, with a "Show in Diagnostics" action that deep-links to the tab.
+
+Why both, not either-or:
+- The in-app tab makes errors approachable for non-technical users. Pretty.
+- The file makes bug reports trivial — paste the path, we can ask for the file.
+- One source of truth means no synchronisation problems; the React panel just `tail -f`s the file via a sidecar RPC method (`tail_log(n_lines)` + a `log` notification stream).
+
+Effort: M for the sidecar logging refactor + the React panel. Build it as a single feature, not split. Ship in v0.1.0. **Promoted to P1.**
+
+Replaces the whisperLocal `ui/error_panel.py` port; this design is materially better than copying that 177-line widget.
 
 ## 4. Non-blocking polish
 
@@ -174,12 +209,13 @@ Caveats:
 ## 7. Suggested order of work
 
 1. `pnpm dev` smoke (item 2.1) — fix whatever breaks. **Until this works, nothing else matters.**
-2. Real recording → tray transcript (item 2.4) — proves the wiring.
+2. Real recording → tray transcript (item 2.4) — proves the wiring. Hotkey path; the Record button is gravy.
 3. PyInstaller sidecar build (item 2.7) — proves the package can ship.
 4. Tag `v0.1.0-rc1`, let CI build installers, install one on a clean VM (item 2.8 + 2.9).
-5. Bench harness (section 6) — confirms port fidelity. If text differs, audit the port before going further.
-6. Parity-blocker gaps (section 3, "Must-port"): error panel, dynamic tray text, input-group helper, evdev hotkey.
-7. Tag `v0.1.0`. Polish + screenshots + signing + Phase 12 are all post-1.0.
+5. Bench harness (§6) — confirms port fidelity. If text differs, audit the port before going further.
+6. **P1 gaps (§3):** evdev Wayland hotkey + hotplug rescan, dynamic tray text, Linux input-group helper. **Plus §3a Diagnostics tab + log file** — gives users somewhere to look when something breaks.
+7. **P2 gaps (§3 "Should-port"):** recording-mode toggle in tray, cross-platform "Open at login", sidecar restart loop, startup diagnostics, ported tests, model migration. Order them by what's blocking real users.
+8. Tag `v0.1.0`. Polish + screenshots + signing + Phase 12 are all post-1.0.
 
 ## 8. Open questions
 
