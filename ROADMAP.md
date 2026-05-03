@@ -2,7 +2,15 @@
 
 Status as of 2026-04-28 — HEAD `63a1b5b`.
 
-This is the **post-Phase-11 punch list**: what's been verified, what hasn't, gaps vs. the original `whisperLocal`, and how to benchmark the two against each other. Strict honesty — items aren't checked off until they've been driven by hand or by CI.
+Post-Phase-11 punch list: what's verified, what isn't, gaps vs `whisperLocal`, and how to benchmark them. Items stay unchecked until driven by hand or CI.
+
+## 0. Engineering principles (apply to every change below)
+
+1. **TDD.** Failing test first, implementation second. No exceptions.
+2. **Self-documenting code.** Names do the work. Comment only the non-obvious WHY.
+3. **Tight docs.** Bullets over paragraphs. Cut sentences that aren't doing work.
+4. **Modular.** One responsibility per file. New behaviour → new module if it doesn't fit cleanly.
+5. **No duplication.** Refactor before pasting similar code anywhere a second time.
 
 ---
 
