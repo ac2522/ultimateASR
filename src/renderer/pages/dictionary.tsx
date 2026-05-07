@@ -1,16 +1,13 @@
 import { DictionaryEditor } from "@/components/dictionary-editor";
+import { QueryState } from "@/components/query-state";
 import { useSettings, useUpdateSettings } from "@/hooks/use-settings";
 
 export function DictionaryPage() {
-  const { data: settings } = useSettings();
+  const { data: settings, error, isLoading, refetch } = useSettings();
   const update = useUpdateSettings();
 
   if (!settings) {
-    return (
-      <div className="p-8 text-sm text-muted-foreground">
-        Loading settings...
-      </div>
-    );
+    return <QueryState isLoading={isLoading} error={error} onRetry={() => refetch()} loadingLabel="Loading settings..." />;
   }
 
   return (

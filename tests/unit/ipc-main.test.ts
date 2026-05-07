@@ -64,4 +64,15 @@ describe("setupIPC", () => {
     setupIPC(sc);
     await expect(handlers["transcribe"]({}, { engine_kind: "fake" })).rejects.toBeDefined();
   });
+  it("logs handler errors to stderr with the channel name", async () => {
+    const sc = {
+      on() {},
+      async call() { throw new Error("sidecar dead"); },
+    } as any;
+    setupIPC(sc);
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(handlers["settings.get"]({}, {})).rejects.toThrow("sidecar dead");
+    expect(spy).toHaveBeenCalledWith(expect.stringContaining("[ipc] settings.get"));
+    spy.mockRestore();
+  });
 });

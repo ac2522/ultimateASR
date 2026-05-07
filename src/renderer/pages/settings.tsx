@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { QueryState } from "@/components/query-state";
 import { SettingsSection } from "@/components/settings-section";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -27,7 +28,7 @@ const MODE_OPTIONS: { value: Settings["recording_mode"]; label: string }[] = [
 ];
 
 export function SettingsPage() {
-  const { data: settings } = useSettings();
+  const { data: settings, error, isLoading, refetch } = useSettings();
   const { data: devices } = useDevices();
   const update = useUpdateSettings();
 
@@ -44,7 +45,7 @@ export function SettingsPage() {
   }, [settings]);
 
   if (!settings) {
-    return <div className="p-8 text-sm text-muted-foreground">Loading settings...</div>;
+    return <QueryState isLoading={isLoading} error={error} onRetry={() => refetch()} loadingLabel="Loading settings..." />;
   }
 
   function commit<K extends keyof Settings>(key: K, value: Settings[K]) {

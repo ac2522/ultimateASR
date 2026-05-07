@@ -44,9 +44,15 @@ export function setupIPC(sidecar: Sidecar, deps: IpcDeps = {}) {
   for (const [channel, method] of Object.entries(RPC_METHOD)) {
     const entry = lookupContract(channel);
     ipcMain.handle(channel, async (_e, raw) => {
-      const parsed = entry.input.parse(raw ?? {}) as object;
-      const out = await sidecar.call(method, parsed);
-      return entry.output.parse(out);
+      try {
+        const parsed = entry.input.parse(raw ?? {}) as object;
+        const out = await sidecar.call(method, parsed);
+        return entry.output.parse(out);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[ipc] ${channel}: ${msg}`);
+        throw err;
+      }
     });
   }
 

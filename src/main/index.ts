@@ -1,6 +1,7 @@
 import { app, BrowserWindow, clipboard } from "electron";
 import path from "node:path";
 import { Sidecar } from "./sidecar";
+import { resolveSidecarCommand } from "./sidecar-resolve";
 import { acquireOrFocus } from "./single-instance";
 import { setupIPC } from "./ipc";
 import { TrayController, type TrayCallbacks } from "./tray";
@@ -40,20 +41,6 @@ function createWindow(): BrowserWindow {
   }
   win.once("ready-to-show", () => win.show());
   return win;
-}
-
-function resolveSidecarCommand(): { command: string; args: string[] } {
-  // In dev, use the system Python to run the package directly.
-  // In production (after Phase 10 packaging), we'll use the bundled binary.
-  const command = process.env.ULTIMATEASR_PYTHON || "python3";
-  // Test-only escape hatch: when ULTIMATEASR_E2E_SIDECAR points at a Node script,
-  // run it with the current node executable instead of the Python sidecar. This is
-  // a no-op unless the env var is set, so production builds are unaffected.
-  const e2e = process.env.ULTIMATEASR_E2E_SIDECAR;
-  if (e2e) {
-    return { command: process.execPath, args: [e2e] };
-  }
-  return { command, args: ["-m", "ultimate_asr"] };
 }
 
 function trayCallbacks(): TrayCallbacks {
@@ -138,7 +125,14 @@ async function main() {
   await app.whenReady();
 
   const cfg = resolveSidecarCommand();
-  sidecar = new Sidecar({ command: cfg.command, args: cfg.args });
+  sidecar = new Sidecar({ command: cfg.command, args: cfg.args, cwd: cfg.cwd });
+  sidecar.on("stderr", (chunk) => process.stderr.write(`[sidecar] ${chunk}`));
+  sidecar.on("error", (err) => console.error("[sidecar] error:", err));
+  sidecar.on("exit", (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`[sidecar] exited with code ${code}`);
+    }
+  });
   await sidecar.start();
 
   transcriptsStore = new TranscriptsStore({

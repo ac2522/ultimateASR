@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { QueryState } from "@/components/query-state";
 import { SettingsSection } from "@/components/settings-section";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,7 +29,7 @@ function isEndpointProvider(p: Settings["llm_provider"]): boolean {
 }
 
 export function LlmPage() {
-  const { data: settings } = useSettings();
+  const { data: settings, error, isLoading, refetch } = useSettings();
   const update = useUpdateSettings();
 
   const [cloudKey, setCloudKey] = useState("");
@@ -49,7 +50,7 @@ export function LlmPage() {
   }, [settings]);
 
   if (!settings) {
-    return <div className="p-8 text-sm text-muted-foreground">Loading settings...</div>;
+    return <QueryState isLoading={isLoading} error={error} onRetry={() => refetch()} loadingLabel="Loading settings..." />;
   }
 
   function commit<K extends keyof Settings>(key: K, value: Settings[K]) {

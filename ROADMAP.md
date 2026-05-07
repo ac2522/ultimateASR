@@ -27,7 +27,7 @@ Post-Phase-11 punch list: what's verified, what isn't, gaps vs `whisperLocal`, a
 
 These have to happen before anyone can dictate. None has been driven yet.
 
-- [ ] **`pnpm dev` opens an Electron window.** No live launch on this dev box (no display server). Highest priority — confirms the renderer mounts, the preload bridge works, and the sidecar spawns.
+- [ ] **`pnpm dev` opens an Electron window.** No live launch on this dev box (no display server). Highest priority — confirms the renderer mounts, the preload bridge works, and the sidecar spawns. (Bug fixed 2026-04-27: sidecar spawn missed `cwd`, so `python3 -m ultimate_asr` failed — every IPC call hung. Now resolved in `src/main/sidecar-resolve.ts`.)
 - [ ] **Sidecar JSON-RPC handshake from a real renderer.** `window.api.ping()` returns `"pong"`. Trivial in principle but not yet observed.
 - [ ] **First-run wizard** drives hardware detection → recommended model → `models.download` → completes.
 - [ ] **End-to-end recording → transcript.** Speak into a real mic, see a transcript appear in the tray submenu. This is the only test that proves the app works.
